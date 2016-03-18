@@ -19,11 +19,11 @@
 static const float timeout = 5.0;
 
 // A
-static int A_seq = 0;
+static volatile int A_seq = 0;
 static pkt *pkt_in_transit = NULL;
 
 // B
-static int B_seq = 0;
+static volatile int B_seq = 0;
 
 pkt *make_pkt(int seq, int ack, struct msg *msg);
 
