@@ -27,11 +27,11 @@ static volatile int B_seq = 0;
 
 pkt *make_pkt(int seq, int ack, struct msg *msg);
 
-bool is_corrupt(struct pkt pkt);
-
 pkt *make_ack(int ack);
 
 int make_checksum(struct pkt *pkt);
+
+bool is_corrupt(struct pkt pkt);
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message) {
@@ -59,8 +59,10 @@ void A_input(struct pkt packet) {
 
 /* called when A's timer goes off */
 void A_timerinterrupt() {
-    tolayer3(0, *pkt_in_transit);
-    starttimer(0, timeout);
+    if (pkt_in_transit != NULL) {
+        tolayer3(0, *pkt_in_transit);
+        starttimer(0, timeout);
+    }
 }
 
 /* the following routine will be called once (only) before any other */
@@ -72,14 +74,15 @@ void A_init() {
 
 /* called from layer 3, when a packet arrives for layer 4 at B*/
 void B_input(struct pkt packet) {
-    if (!is_corrupt(packet) && packet.seqnum == B_seq) {
+    bool corrupt = is_corrupt(packet);
+    if (!corrupt && packet.seqnum == B_seq) {
         pkt *ack_pkt = make_ack(B_seq);
         tolayer3(1, *ack_pkt);
         tolayer5(1, packet.payload);
         // toggle seq
         B_seq ^= 1;
         delete ack_pkt;
-    } else {
+    } else if (corrupt || packet.seqnum == (B_seq ^ 1)) {
         pkt *ack_pkt = make_ack(B_seq ^ 1);
         tolayer3(1, *ack_pkt);
         delete ack_pkt;
@@ -97,7 +100,6 @@ pkt *make_pkt(int seq, int ack, struct msg *msg) {
     struct pkt *pkt = new struct pkt();
     pkt->seqnum = seq;
     pkt->acknum = ack;
-    memset(pkt->payload, 0, 20);
     if (msg != NULL) {
         memcpy(pkt->payload, (*msg).data, 20);
     }
