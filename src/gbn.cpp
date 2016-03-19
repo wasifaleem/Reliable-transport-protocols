@@ -152,7 +152,7 @@ float expected_timeout() {
 
 
 pkt make_pkt(int seq, int ack, const struct msg *msg) {
-    struct pkt pkt = {.seqnum = seq, .acknum = ack};
+    struct pkt pkt = {seq, ack};
     if (msg != NULL) {
         memcpy(pkt.payload, (*msg).data, 20);
     }
