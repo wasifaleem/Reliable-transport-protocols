@@ -16,7 +16,7 @@
 
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
 
-static const float timeout = 5.0;
+static const float timeout = 10.0;
 
 // A
 static volatile int A_seq = 0;
