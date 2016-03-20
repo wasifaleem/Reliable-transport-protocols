@@ -65,14 +65,14 @@ void cancel_timer(int seq);
 static const float timeout = 12.0; // TODO: RTT ?
 
 // A
-static std::vector<std::pair<pkt, bool> > A_sndpkt(1000);
+static std::vector<std::pair<pkt, bool> > A_sndpkt(1100);
 static std::queue<msg> A_buffer;
 static int send_base = 1, nextseqnum = 1, N;
 
 void send_buffered();
 
 // B
-static std::vector<std::pair<pkt, bool> > B_buffer(1000);
+static std::vector<std::pair<pkt, bool> > B_buffer(1100);
 static volatile int rcvbase = 1;
 
 

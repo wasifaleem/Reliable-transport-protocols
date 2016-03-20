@@ -41,7 +41,7 @@ float expected_timeout();
 static const float timeout = 12.0; // TODO: RTT ?
 
 // A
-static std::vector<pkt> sndpkt(1000);
+static std::vector<pkt> sndpkt(1100);
 static std::queue<msg> buffer;
 static int base = 1, nextseqnum = 1, N;
 
