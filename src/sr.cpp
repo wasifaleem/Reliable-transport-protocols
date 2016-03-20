@@ -38,7 +38,7 @@ bool is_corrupt(const struct pkt &pkt);
 float expected_timeout();
 
 /* Timer */
-static const float CLOCK_TICK = 0.5;
+static const float CLOCK_TICK = 0.1;
 
 struct timer {
     int seq;
@@ -136,6 +136,7 @@ void A_timerinterrupt() {
             if (!cancelled_timers.count(t.seq)) {
                 DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << A_sndpkt[t.seq].first << "\033[0m");
                 tolayer3(0, A_sndpkt[t.seq].first);
+                start_timer(t.seq, expected_timeout());
             } else {
                 DEBUG_A("\033[31;1m" << "TIMEOUT Cancelled: " << t << "\033[0m");
             }
