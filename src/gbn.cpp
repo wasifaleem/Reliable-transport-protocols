@@ -4,6 +4,7 @@
 #include <vector>
 #include <queue>
 #include <iomanip>
+#include <cmath>
 
 /* ******************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
@@ -36,12 +37,22 @@ int make_checksum(const struct pkt &pkt);
 
 bool is_corrupt(const struct pkt &pkt);
 
-float expected_timeout();
+static float initial_rtt = 12.0f,
+        alpha = 0.125f,
+        beta = 0.25f,
+        sent_time = 0.0f,
+        SampleRTT = initial_rtt,
+        EstimatedRTT = initial_rtt,
+        DevRTT = 0;
 
-static const float timeout = 12.0; // TODO: RTT ?
+float TimeoutInterval();
 
 // A
-static std::vector<pkt> sndpkt(1100);
+struct buffer {
+    struct pkt pkt;
+    bool retransmitted;
+};
+static std::vector<buffer> sndpkt(1100);
 static std::queue<msg> buffer;
 static int base = 1, nextseqnum = 1, N;
 
@@ -53,10 +64,12 @@ static volatile int expectedseqnum = 1;
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message) {
     if (nextseqnum < base + N) {
-        sndpkt[nextseqnum] = make_pkt(nextseqnum, 0, &message);
-        tolayer3(0, sndpkt[nextseqnum]);
+        struct buffer b = {make_pkt(nextseqnum, 0, &message), false};
+        sndpkt[nextseqnum] = b;
+        tolayer3(0, sndpkt[nextseqnum].pkt);
+        sent_time = get_sim_time();
         if (base == nextseqnum) {
-            starttimer(0, expected_timeout());
+            starttimer(0, TimeoutInterval());
         }
         nextseqnum++;
         DEBUG_A("Sent: " << message);
@@ -70,6 +83,13 @@ void A_output(struct msg message) {
 void A_input(struct pkt packet) {
     if (!is_corrupt(packet)) {
         DEBUG_A("Receive ACK: " << packet);
+
+        if (!sndpkt[packet.acknum].retransmitted) {
+            SampleRTT = get_sim_time() - sent_time;
+            EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
+            DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
+        }
+
         base = packet.acknum + 1;
         if (base == nextseqnum) {
             stoptimer(0);
@@ -83,10 +103,12 @@ void A_input(struct pkt packet) {
 void send_buffered() {
     while (!buffer.empty() && nextseqnum < base + N) {
         struct msg message = buffer.front();
-        sndpkt[nextseqnum] = make_pkt(nextseqnum, 0, &message);
-        tolayer3(0, sndpkt[nextseqnum]);
+        struct buffer b = {make_pkt(nextseqnum, 0, &message), false};
+        sndpkt[nextseqnum] = b;
+        tolayer3(0, sndpkt[nextseqnum].pkt);
+        sent_time = get_sim_time();
         if (base == nextseqnum) {
-            starttimer(0, expected_timeout());
+            starttimer(0, TimeoutInterval());
         }
         nextseqnum++;
         buffer.pop();
@@ -96,13 +118,13 @@ void send_buffered() {
 
 /* called when A's timer goes off */
 void A_timerinterrupt() {
-    DEBUG_A("\033[31;1m" << "Start Timer interrupt" << "\033[0m");
-    starttimer(0, expected_timeout());
+    starttimer(0, TimeoutInterval() * 2);
     for (int i = base; (i < nextseqnum); ++i) {
-        DEBUG_A("Re-Sending: " << (sndpkt[i]));
-        tolayer3(0, sndpkt[i]);
+        DEBUG_A("Re-Sending: " << sndpkt[i].pkt);
+        tolayer3(0, sndpkt[i].pkt);
+        sndpkt[i].retransmitted = true;
+        DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << sndpkt[i].pkt << "\033[0m");
     }
-    DEBUG_A("\033[31;1m" << "End Timer interrupt" << "\033[0m");
 }
 
 /* the following routine will be called once (only) before any other */
@@ -136,16 +158,12 @@ void B_input(struct pkt packet) {
 void B_init() {
 }
 
-float expected_timeout() {
-    int n = (nextseqnum - base);
-    if (n < 1) {
-        n = 1;
-    }
-    float t = timeout * n;
-    DEBUG_A("Expected timeout: " << t);
-    return t;
-}
 
+float TimeoutInterval() {
+    float TimeoutInterval = EstimatedRTT + 4 * DevRTT;
+    DEBUG_A("Estimated TimeoutInterval: " << TimeoutInterval);
+    return TimeoutInterval;
+}
 
 pkt make_pkt(int seq, int ack, const struct msg *msg) {
     struct pkt pkt = {seq, ack};
