@@ -5,6 +5,7 @@
 #include <vector>
 #include <queue>
 #include <iomanip>
+#include <cmath>
 /* ******************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
 
@@ -35,9 +36,17 @@ int make_checksum(const struct pkt &pkt);
 
 bool is_corrupt(const struct pkt &pkt);
 
-float expected_timeout();
-
 /* Timer */
+static float initial_rtt = 12.0f,
+        alpha = 0.125f,
+        beta = 0.25f,
+        sent_time = 0.0f,
+        SampleRTT = initial_rtt,
+        EstimatedRTT = initial_rtt,
+        DevRTT = 0;
+
+float TimeoutInterval();
+
 static const float CLOCK_TICK = 0.1;
 
 struct timer {
@@ -62,27 +71,32 @@ void cancel_timer(int seq);
 
 /* Timer */
 
-static const float timeout = 12.0; // TODO: RTT ?
-
 // A
-static std::vector<std::pair<pkt, bool> > A_sndpkt(1100);
+struct buffer {
+    struct pkt pkt;
+    bool acked;
+    bool retransmitted;
+};
+static std::vector<buffer> A_sndpkt(1100);
 static std::queue<msg> A_buffer;
 static int send_base = 1, nextseqnum = 1, N;
 
 void send_buffered();
 
 // B
-static std::vector<std::pair<pkt, bool> > B_buffer(1100);
+static std::vector<buffer> B_buffer(1100);
 static volatile int rcvbase = 1;
 
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message) {
     if (nextseqnum < send_base + N) {
-        A_sndpkt[nextseqnum] = std::make_pair(make_pkt(nextseqnum, 0, &message), false);
-        DEBUG_A("Sending: " << A_sndpkt[nextseqnum].first);
-        tolayer3(0, A_sndpkt[nextseqnum].first);
-        start_timer(nextseqnum, expected_timeout());
+        struct buffer b = {make_pkt(nextseqnum, 0, &message), false, false};
+        A_sndpkt[nextseqnum] = b;
+        DEBUG_A("Sending: " << A_sndpkt[nextseqnum].pkt);
+        tolayer3(0, A_sndpkt[nextseqnum].pkt);
+        start_timer(nextseqnum, TimeoutInterval());
+        sent_time = get_sim_time();
         nextseqnum++;
     } else {
         A_buffer.push(message);
@@ -93,15 +107,20 @@ void A_output(struct msg message) {
 /* called from layer 3, when a packet arrives for layer 4 */
 void A_input(struct pkt packet) {
     if (!is_corrupt(packet)) {
-        if (!A_sndpkt[packet.acknum].second) {
+        if (!A_sndpkt[packet.acknum].acked) {
             cancel_timer(packet.acknum);
+            A_sndpkt[packet.acknum].acked = true;
+            DEBUG_A("\033[1;1m" << "Receive ACK: " << A_sndpkt[packet.acknum].pkt << "\033[0m");
 
-            A_sndpkt[packet.acknum].second = true;
-            DEBUG_A("\033[1;1m" << "Receive ACK: " << A_sndpkt[packet.acknum].first<< "\033[0m");
+            if (!A_sndpkt[packet.acknum].retransmitted) {
+                SampleRTT = get_sim_time() - sent_time;
+                EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
+                DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
+            }
 
             if (packet.acknum == send_base) {
                 for (std::vector<std::pair<pkt, bool> >::size_type i = (unsigned long) (send_base);
-                     i != A_sndpkt.size() && A_sndpkt[i].second; i++) {
+                     i != A_sndpkt.size() && A_sndpkt[i].acked; i++) {
                     send_base++;
                     DEBUG_A("Advancing send_base to: " << send_base);
                 }
@@ -118,10 +137,12 @@ void A_input(struct pkt packet) {
 void send_buffered() {
     while (!A_buffer.empty() && nextseqnum < send_base + N) {
         struct msg message = A_buffer.front();
-        A_sndpkt[nextseqnum] = std::make_pair(make_pkt(nextseqnum, 0, &message), false);
-        DEBUG_A("Sending buffered: " << A_sndpkt[nextseqnum].first);
-        tolayer3(0, A_sndpkt[nextseqnum].first);
-        start_timer(nextseqnum, expected_timeout());
+        struct buffer b = {make_pkt(nextseqnum, 0, &message), false, false};
+        A_sndpkt[nextseqnum] = b;
+        DEBUG_A("Sending buffered: " << A_sndpkt[nextseqnum].pkt);
+        tolayer3(0, A_sndpkt[nextseqnum].pkt);
+        start_timer(nextseqnum, TimeoutInterval());
+        sent_time = get_sim_time();
         nextseqnum++;
         A_buffer.pop();
     }
@@ -134,11 +155,12 @@ void A_timerinterrupt() {
         timer t = timers.top();
         if (t.time <= get_sim_time()) {
             if (!cancelled_timers.count(t.seq)) {
-                DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << A_sndpkt[t.seq].first << "\033[0m");
-                tolayer3(0, A_sndpkt[t.seq].first);
-                start_timer(t.seq, expected_timeout());
+                DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << A_sndpkt[t.seq].pkt << "\033[0m");
+                tolayer3(0, A_sndpkt[t.seq].pkt);
+                A_sndpkt[t.seq].retransmitted = true;
+                start_timer(t.seq, TimeoutInterval() * 2);
             } else {
-                DEBUG_A("\033[31;1m" << "TIMEOUT Cancelled: " << t << "\033[0m");
+//                DEBUG_A("\033[31;1m" << "TIMEOUT Cancelled: " << t << "\033[0m");
             }
             timers.pop();
         } else {
@@ -165,15 +187,16 @@ void B_input(struct pkt packet) {
             DEBUG_B("Sending ACK: " << ack);
             tolayer3(1, ack);
 
-            if (!B_buffer[packet.seqnum].second) {
-                B_buffer[packet.seqnum] = std::make_pair(packet, true);
+            if (!B_buffer[packet.seqnum].acked) {
+                struct buffer b = {packet, true, false};
+                B_buffer[packet.seqnum] = b;
             }
 
             if (packet.seqnum == rcvbase) {
-                for (std::vector<std::pair<pkt, bool> >::size_type i = (unsigned long) (rcvbase);
-                     i != B_buffer.size() && B_buffer[i].second; i++) {
-                    DEBUG_B("\033[32;1m" << "Received: " << B_buffer[i].first << "\033[0m");
-                    tolayer5(1, B_buffer[i].first.payload);
+                for (std::vector<buffer>::size_type i = (unsigned long) (rcvbase);
+                     i != B_buffer.size() && B_buffer[i].acked; i++) {
+                    DEBUG_B("\033[32;1m" << "Received: " << B_buffer[i].pkt << "\033[0m");
+                    tolayer5(1, B_buffer[i].pkt.payload);
                     rcvbase++;
                     DEBUG_A("Advancing rcvbase to: " << rcvbase);
                 }
@@ -195,14 +218,10 @@ void B_init() {
 
 }
 
-float expected_timeout() {
-    int n = (nextseqnum - send_base);
-    if (n < 1) {
-        n = 1;
-    }
-    float t = timeout * n;
-    DEBUG_A("Expected timeout: " << t);
-    return t;
+float TimeoutInterval() {
+    float TimeoutInterval = EstimatedRTT + 4 * DevRTT;
+    DEBUG_A("Estimated TimeoutInterval: " << TimeoutInterval);
+    return TimeoutInterval;
 }
 
 
@@ -253,5 +272,7 @@ void start_timer(int seq, float time) {
 }
 
 void cancel_timer(int seq) {
-    cancelled_timers.insert(seq);
+    if (!cancelled_timers.count(seq)) {
+        cancelled_timers.insert(seq);
+    }
 }
