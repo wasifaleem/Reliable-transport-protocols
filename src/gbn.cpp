@@ -69,15 +69,11 @@ void A_output(struct msg message) {
 /* called from layer 3, when a packet arrives for layer 4 */
 void A_input(struct pkt packet) {
     if (!is_corrupt(packet)) {
-        if (packet.acknum == base) {
-            DEBUG_A("Receive ACK: " << packet);
-            base = packet.acknum + 1;
-            if (base == nextseqnum) {
-                stoptimer(0);
-                send_buffered();
-            }
-        } else {
-            DEBUG_A("Receive DUP-ACK: " << packet);
+        DEBUG_A("Receive ACK: " << packet);
+        base = packet.acknum + 1;
+        if (base == nextseqnum) {
+            stoptimer(0);
+            send_buffered();
         }
     } else {
         DEBUG_A("Receive CORRUPT ACK: " << packet);
