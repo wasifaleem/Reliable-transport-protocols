@@ -37,7 +37,7 @@ int make_checksum(const struct pkt &pkt);
 bool is_corrupt(const struct pkt &pkt);
 
 /* Timer */
-static float initial_rtt = 12.0f,
+static float initial_rtt = 10.0f,
         alpha = 0.125f,
         beta = 0.25f,
         sent_time = 0.0f,
