@@ -82,7 +82,12 @@ void A_output(struct msg message) {
 /* called from layer 3, when a packet arrives for layer 4 */
 void A_input(struct pkt packet) {
     if (!is_corrupt(packet)) {
-        DEBUG_A("Receive ACK: " << packet);
+        if (packet.acknum < base) {
+            DEBUG_A("\033[31;1m" << "Receive ACK: " << packet.acknum << " is less than BASE: " << base << " ignoring" <<
+                    "\033[0m");
+            return;
+        }
+        DEBUG_A("\033[1;1m" << "Receive ACK: " << sndpkt[packet.acknum].pkt << "\033[0m");
 
         if (!sndpkt[packet.acknum].retransmitted) {
             SampleRTT = get_sim_time() - sent_time;
@@ -118,12 +123,11 @@ void send_buffered() {
 
 /* called when A's timer goes off */
 void A_timerinterrupt() {
-    starttimer(0, TimeoutInterval() * 2);
+    starttimer(0, TimeoutInterval());
     for (int i = base; (i < nextseqnum); ++i) {
-        DEBUG_A("Re-Sending: " << sndpkt[i].pkt);
         tolayer3(0, sndpkt[i].pkt);
         sndpkt[i].retransmitted = true;
-        DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << sndpkt[i].pkt << "\033[0m");
+        DEBUG_A("\033[31;1m" << "TIMEOUT RESENT: " << sndpkt[i].pkt << "\033[0m");
     }
 }
 

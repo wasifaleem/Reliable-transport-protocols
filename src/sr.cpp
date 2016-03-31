@@ -158,7 +158,7 @@ void A_timerinterrupt() {
                 DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << A_sndpkt[t.seq].pkt << "\033[0m");
                 tolayer3(0, A_sndpkt[t.seq].pkt);
                 A_sndpkt[t.seq].retransmitted = true;
-                start_timer(t.seq, TimeoutInterval() * 2);
+                start_timer(t.seq, TimeoutInterval());
             } else {
 //                DEBUG_A("\033[31;1m" << "TIMEOUT Cancelled: " << t << "\033[0m");
             }
