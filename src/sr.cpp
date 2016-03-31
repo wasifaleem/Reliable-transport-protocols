@@ -40,7 +40,6 @@ bool is_corrupt(const struct pkt &pkt);
 static float initial_rtt = 10.0f,
         alpha = 0.125f,
         beta = 0.25f,
-        sent_time = 0.0f,
         SampleRTT = initial_rtt,
         EstimatedRTT = initial_rtt,
         DevRTT = 0;
@@ -72,31 +71,35 @@ void cancel_timer(int seq);
 /* Timer */
 
 // A
-struct buffer {
+struct A_buffer {
     struct pkt pkt;
     bool acked;
     bool retransmitted;
+    float sent_time;
 };
-static std::vector<buffer> A_sndpkt(1100);
+static std::vector<A_buffer> A_sndpkt(1100);
 static std::queue<msg> A_buffer;
 static int send_base = 1, nextseqnum = 1, N;
 
 void send_buffered();
 
 // B
-static std::vector<buffer> B_buffer(1100);
+struct B_buffer {
+    struct pkt pkt;
+    bool acked;
+};
+static std::vector<B_buffer> B_rcvpkt(1100);
 static volatile int rcvbase = 1;
 
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message) {
     if (nextseqnum < send_base + N) {
-        struct buffer b = {make_pkt(nextseqnum, 0, &message), false, false};
+        struct A_buffer b = {make_pkt(nextseqnum, 0, &message), false, false, get_sim_time()};
         A_sndpkt[nextseqnum] = b;
         DEBUG_A("Sending: " << A_sndpkt[nextseqnum].pkt);
         tolayer3(0, A_sndpkt[nextseqnum].pkt);
         start_timer(nextseqnum, TimeoutInterval());
-        sent_time = get_sim_time();
         nextseqnum++;
     } else {
         A_buffer.push(message);
@@ -113,7 +116,7 @@ void A_input(struct pkt packet) {
             DEBUG_A("\033[1;1m" << "Receive ACK: " << A_sndpkt[packet.acknum].pkt << "\033[0m");
 
             if (!A_sndpkt[packet.acknum].retransmitted) {
-                SampleRTT = get_sim_time() - sent_time;
+                SampleRTT = get_sim_time() - A_sndpkt[packet.acknum].sent_time;
                 EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
                 DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
             }
@@ -137,12 +140,11 @@ void A_input(struct pkt packet) {
 void send_buffered() {
     while (!A_buffer.empty() && nextseqnum < send_base + N) {
         struct msg message = A_buffer.front();
-        struct buffer b = {make_pkt(nextseqnum, 0, &message), false, false};
+        struct A_buffer b = {make_pkt(nextseqnum, 0, &message), false, false, get_sim_time()};
         A_sndpkt[nextseqnum] = b;
         DEBUG_A("Sending buffered: " << A_sndpkt[nextseqnum].pkt);
         tolayer3(0, A_sndpkt[nextseqnum].pkt);
         start_timer(nextseqnum, TimeoutInterval());
-        sent_time = get_sim_time();
         nextseqnum++;
         A_buffer.pop();
     }
@@ -187,16 +189,16 @@ void B_input(struct pkt packet) {
             DEBUG_B("Sending ACK: " << ack);
             tolayer3(1, ack);
 
-            if (!B_buffer[packet.seqnum].acked) {
-                struct buffer b = {packet, true, false};
-                B_buffer[packet.seqnum] = b;
+            if (!B_rcvpkt[packet.seqnum].acked) {
+                struct B_buffer b = {packet, true};
+                B_rcvpkt[packet.seqnum] = b;
             }
 
             if (packet.seqnum == rcvbase) {
-                for (std::vector<buffer>::size_type i = (unsigned long) (rcvbase);
-                     i != B_buffer.size() && B_buffer[i].acked; i++) {
-                    DEBUG_B("\033[32;1m" << "Received: " << B_buffer[i].pkt << "\033[0m");
-                    tolayer5(1, B_buffer[i].pkt.payload);
+                for (std::vector<B_buffer>::size_type i = (unsigned long) (rcvbase);
+                     i != B_rcvpkt.size() && B_rcvpkt[i].acked; i++) {
+                    DEBUG_B("\033[32;1m" << "Received: " << B_rcvpkt[i].pkt << "\033[0m");
+                    tolayer5(1, B_rcvpkt[i].pkt.payload);
                     rcvbase++;
                     DEBUG_A("Advancing rcvbase to: " << rcvbase);
                 }

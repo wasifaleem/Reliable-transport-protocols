@@ -40,7 +40,6 @@ bool is_corrupt(const struct pkt &pkt);
 static float initial_rtt = 10.0f,
         alpha = 0.125f,
         beta = 0.25f,
-        sent_time = 0.0f,
         SampleRTT = initial_rtt,
         EstimatedRTT = initial_rtt,
         DevRTT = 0;
@@ -51,6 +50,7 @@ float TimeoutInterval();
 struct buffer {
     struct pkt pkt;
     bool retransmitted;
+    float sent_time;
 };
 static std::vector<buffer> sndpkt(1100);
 static std::queue<msg> buffer;
@@ -64,10 +64,9 @@ static volatile int expectedseqnum = 1;
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message) {
     if (nextseqnum < base + N) {
-        struct buffer b = {make_pkt(nextseqnum, 0, &message), false};
+        struct buffer b = {make_pkt(nextseqnum, 0, &message), false, get_sim_time()};
         sndpkt[nextseqnum] = b;
         tolayer3(0, sndpkt[nextseqnum].pkt);
-        sent_time = get_sim_time();
         if (base == nextseqnum) {
             starttimer(0, TimeoutInterval());
         }
@@ -90,7 +89,7 @@ void A_input(struct pkt packet) {
         DEBUG_A("\033[1;1m" << "Receive ACK: " << sndpkt[packet.acknum].pkt << "\033[0m");
 
         if (!sndpkt[packet.acknum].retransmitted) {
-            SampleRTT = get_sim_time() - sent_time;
+            SampleRTT = get_sim_time() - sndpkt[packet.acknum].sent_time;
             EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
             DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
         }
@@ -108,10 +107,9 @@ void A_input(struct pkt packet) {
 void send_buffered() {
     while (!buffer.empty() && nextseqnum < base + N) {
         struct msg message = buffer.front();
-        struct buffer b = {make_pkt(nextseqnum, 0, &message), false};
+        struct buffer b = {make_pkt(nextseqnum, 0, &message), false, get_sim_time()};
         sndpkt[nextseqnum] = b;
         tolayer3(0, sndpkt[nextseqnum].pkt);
-        sent_time = get_sim_time();
         if (base == nextseqnum) {
             starttimer(0, TimeoutInterval());
         }
