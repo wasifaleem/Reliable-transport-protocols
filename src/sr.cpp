@@ -42,7 +42,7 @@ static float initial_rtt = 10.0f,
         beta = 0.25f,
         SampleRTT = initial_rtt,
         EstimatedRTT = initial_rtt,
-        DevRTT = 0;
+        DevRTT = 0.0f;
 
 float TimeoutInterval();
 
@@ -160,7 +160,7 @@ void A_timerinterrupt() {
                 DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << A_sndpkt[t.seq].pkt << "\033[0m");
                 tolayer3(0, A_sndpkt[t.seq].pkt);
                 A_sndpkt[t.seq].retransmitted = true;
-                start_timer(t.seq, TimeoutInterval());
+                start_timer(t.seq, TimeoutInterval() * 2);
             } else {
 //                DEBUG_A("\033[31;1m" << "TIMEOUT Cancelled: " << t << "\033[0m");
             }

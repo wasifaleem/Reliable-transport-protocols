@@ -42,7 +42,7 @@ static float initial_rtt = 10.0f,
         beta = 0.25f,
         SampleRTT = initial_rtt,
         EstimatedRTT = initial_rtt,
-        DevRTT = 0;
+        DevRTT = 0.0f;
 
 float TimeoutInterval();
 
@@ -121,7 +121,7 @@ void send_buffered() {
 
 /* called when A's timer goes off */
 void A_timerinterrupt() {
-    starttimer(0, TimeoutInterval());
+    starttimer(0, TimeoutInterval() * 2);
     for (int i = base; (i < nextseqnum); ++i) {
         tolayer3(0, sndpkt[i].pkt);
         sndpkt[i].retransmitted = true;
