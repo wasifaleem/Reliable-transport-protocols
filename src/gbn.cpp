@@ -98,6 +98,10 @@ void A_input(struct pkt packet) {
         if (base == nextseqnum) {
             stoptimer(0);
             send_buffered();
+        } else {
+            stoptimer(0);
+            starttimer(0, TimeoutInterval());
+            DEBUG_A("\033[1;1m" << "Timer restart" << "\033[0m");
         }
     } else {
         DEBUG_A("Receive CORRUPT ACK: " << packet);
