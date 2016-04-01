@@ -6,6 +6,8 @@
 #include <queue>
 #include <iomanip>
 #include <cmath>
+#include <fstream>
+
 /* ******************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
 
@@ -23,6 +25,8 @@
 #define DEBUG_LOG(AorB, str) do { std::cout << std::setprecision(5) << std::setw(8) << get_sim_time() << "T: " << std::setw(3) << __LINE__  << "L: " << AorB << " : " << str << std::endl; } while( false )
 #define DEBUG_A(str) DEBUG_LOG('A', str)
 #define DEBUG_B(str) DEBUG_LOG('B', str)
+static std::ofstream timeouts("timeouts.csv", std::ios::out | std::ios::trunc);
+static const char *const SEP = ", ";
 
 std::ostream &operator<<(std::ostream &, const pkt &);
 
@@ -119,6 +123,10 @@ void A_input(struct pkt packet) {
                 SampleRTT = get_sim_time() - A_sndpkt[packet.acknum].sent_time;
                 EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
                 DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
+
+                timeouts << std::endl << get_sim_time() << SEP << SampleRTT << SEP << EstimatedRTT << SEP << DevRTT <<
+                SEP << TimeoutInterval();
+                timeouts.flush();
             }
 
             if (packet.acknum == send_base) {
@@ -177,6 +185,8 @@ void A_timerinterrupt() {
 void A_init() {
     N = getwinsize();
     starttimer(0, CLOCK_TICK);
+    timeouts << "TIME" << SEP << "SampleRTT" << SEP << "EstimatedRTT" << SEP << "DevRTT" << SEP <<
+    "TimeoutInterval";
 }
 
 /* Note that with simplex transfer from a-to-B, there is no B_output() */
