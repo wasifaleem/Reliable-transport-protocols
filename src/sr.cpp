@@ -25,8 +25,6 @@
 #define DEBUG_LOG(AorB, str) do { std::cout << std::setprecision(5) << std::setw(8) << get_sim_time() << "T: " << std::setw(3) << __LINE__  << "L: " << AorB << " : " << str << std::endl; } while( false )
 #define DEBUG_A(str) DEBUG_LOG('A', str)
 #define DEBUG_B(str) DEBUG_LOG('B', str)
-static std::ofstream timeouts("timeouts.csv", std::ios::out | std::ios::trunc);
-static const char *const SEP = ", ";
 
 std::ostream &operator<<(std::ostream &, const pkt &);
 
@@ -41,14 +39,7 @@ int make_checksum(const struct pkt &pkt);
 bool is_corrupt(const struct pkt &pkt);
 
 /* Timer */
-static float initial_rtt = 10.0f,
-        alpha = 0.125f,
-        beta = 0.25f,
-        SampleRTT = initial_rtt,
-        EstimatedRTT = initial_rtt,
-        DevRTT = 0.0f;
-
-float TimeoutInterval();
+static float timeout = 10.0f;
 
 static const float CLOCK_TICK = 0.1;
 
@@ -103,7 +94,7 @@ void A_output(struct msg message) {
         A_sndpkt[nextseqnum] = b;
         DEBUG_A("Sending: " << A_sndpkt[nextseqnum].pkt);
         tolayer3(0, A_sndpkt[nextseqnum].pkt);
-        start_timer(nextseqnum, TimeoutInterval());
+        start_timer(nextseqnum, timeout);
         nextseqnum++;
     } else {
         A_buffer.push(message);
@@ -119,15 +110,15 @@ void A_input(struct pkt packet) {
             A_sndpkt[packet.acknum].acked = true;
             DEBUG_A("\033[1;1m" << "Receive ACK: " << A_sndpkt[packet.acknum].pkt << "\033[0m");
 
-            if (!A_sndpkt[packet.acknum].retransmitted) {
-                SampleRTT = get_sim_time() - A_sndpkt[packet.acknum].sent_time;
-                EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
-                DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
-
-                timeouts << std::endl << get_sim_time() << SEP << SampleRTT << SEP << EstimatedRTT << SEP << DevRTT <<
-                SEP << TimeoutInterval();
-                timeouts.flush();
-            }
+//            if (!A_sndpkt[packet.acknum].retransmitted) {
+//                SampleRTT = get_sim_time() - A_sndpkt[packet.acknum].sent_time;
+//                EstimatedRTT = ((1 - alpha) * EstimatedRTT + (alpha * SampleRTT));
+//                DevRTT = ((1 - beta) * DevRTT + (beta * fabsf(SampleRTT - EstimatedRTT)));
+//
+//                timeouts << std::endl << get_sim_time() << SEP << SampleRTT << SEP << EstimatedRTT << SEP << DevRTT <<
+//                SEP << TimeoutInterval();
+//                timeouts.flush();
+//            }
 
             if (packet.acknum == send_base) {
                 for (std::vector<std::pair<pkt, bool> >::size_type i = (unsigned long) (send_base);
@@ -152,7 +143,7 @@ void send_buffered() {
         A_sndpkt[nextseqnum] = b;
         DEBUG_A("Sending buffered: " << A_sndpkt[nextseqnum].pkt);
         tolayer3(0, A_sndpkt[nextseqnum].pkt);
-        start_timer(nextseqnum, TimeoutInterval());
+        start_timer(nextseqnum, timeout);
         nextseqnum++;
         A_buffer.pop();
     }
@@ -168,7 +159,7 @@ void A_timerinterrupt() {
                 DEBUG_A("\033[31;1m" << "TIMEOUT Re-Sending: " << A_sndpkt[t.seq].pkt << "\033[0m");
                 tolayer3(0, A_sndpkt[t.seq].pkt);
                 A_sndpkt[t.seq].retransmitted = true;
-                start_timer(t.seq, TimeoutInterval() * 2);
+                start_timer(t.seq, timeout);
             } else {
 //                DEBUG_A("\033[31;1m" << "TIMEOUT Cancelled: " << t << "\033[0m");
             }
@@ -185,8 +176,6 @@ void A_timerinterrupt() {
 void A_init() {
     N = getwinsize();
     starttimer(0, CLOCK_TICK);
-    timeouts << "TIME" << SEP << "SampleRTT" << SEP << "EstimatedRTT" << SEP << "DevRTT" << SEP <<
-    "TimeoutInterval";
 }
 
 /* Note that with simplex transfer from a-to-B, there is no B_output() */
@@ -230,11 +219,11 @@ void B_init() {
 
 }
 
-float TimeoutInterval() {
-    float TimeoutInterval = EstimatedRTT + 4 * DevRTT;
-    DEBUG_A("Estimated TimeoutInterval: " << TimeoutInterval);
-    return TimeoutInterval;
-}
+//float TimeoutInterval() {
+//    float TimeoutInterval = EstimatedRTT + 4 * DevRTT;
+//    DEBUG_A("Estimated TimeoutInterval: " << TimeoutInterval);
+//    return TimeoutInterval;
+//}
 
 
 pkt make_pkt(int seq, int ack, const struct msg *msg) {
